@@ -1,7 +1,8 @@
 package main
 
 import (
-	"time"
+	"fmt"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt"
@@ -9,7 +10,7 @@ import (
 
 var ApplicationName = "ENIGMA"
 var JwtSigningMethod = jwt.SigningMethodHS256
-var JwtSignatureKey = []byte("P@assword")
+var JwtSignatureKey = []byte("P@ssw0rd")
 
 type MyClaims struct {
 	jwt.StandardClaims
@@ -30,7 +31,8 @@ func main() {
 	r := gin.Default()
 	r.Use(AuthtokenMiddleware())
 
-	r.POST("/login", func(c *gin.Context) {
+	publicRoute := r.Group("/enigma")
+	publicRoute.POST("/auth", func(c *gin.Context) {
 		var user Credential
 		if err := c.BindJSON(&user); err != nil {
 			c.JSON(400, gin.H{
@@ -41,8 +43,10 @@ func main() {
 
 		if user.Username == "enigma" && user.Password == "123" {
 			token, err := GenerateToken(user.Username, "user@corp.com")
+			fmt.Println(err)
 			if err != nil {
 				c.AbortWithStatus(401)
+				return
 			}
 			c.JSON(200, gin.H{
 				"token": token,
@@ -52,45 +56,9 @@ func main() {
 		}
 	})
 
-	r.GET("/customer", func(c *gin.Context) {
-		h := authheader{}
-
-		if err := c.ShouldBindHeader(&h); err != nil {
-			c.JSON(401, gin.H{
-				"message": "Unathorized",
-			})
-			return
-		}
-
-		if h.AuthorizationHeader == "123" {
-			c.JSON(200, gin.H{
-				"message": "customer",
-			})
-			return
-		}
-		c.JSON(401, gin.H{
-			"message": "Unauthorized",
-		})
-	})
-
-	r.GET("/product", func(c *gin.Context) {
-		h := authheader{}
-
-		if err := c.ShouldBindHeader(&h); err != nil {
-			c.JSON(401, gin.H{
-				"message": "Unathorized",
-			})
-			return
-		}
-
-		if h.AuthorizationHeader == "123" {
-			c.JSON(200, gin.H{
-				"message": "customer",
-			})
-			return
-		}
-		c.JSON(401, gin.H{
-			"message": "Unauthorized",
+	publicRoute.GET("/user", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"message": "user",
 		})
 	})
 
@@ -102,7 +70,7 @@ func main() {
 
 func AuthtokenMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if c.Request.URL.Path == "/login" {
+		if c.Request.URL.Path == "/enigma/auth" {
 			c.Next()
 		} else {
 			h := authheader{}
@@ -114,28 +82,66 @@ func AuthtokenMiddleware() gin.HandlerFunc {
 				c.Abort()
 			}
 
-			if h.AuthorizationHeader == "123" {
+			tokenString := strings.Replace(h.AuthorizationHeader, "Bearer ", "", -1)
+			if tokenString == "" {
+				c.JSON(401, gin.H{
+					"message": "Unauthorized",
+				})
+				c.Abort()
+				return
+			}
+
+			token, err := parseToken(tokenString)
+			if err != nil {
+				c.JSON(500, gin.H{
+					"message": "Internal server error",
+				})
+				c.Abort()
+				return
+			}
+			fmt.Println(token)
+
+			if token["iss"] == ApplicationName {
 				c.Next()
 			} else {
 				c.JSON(401, gin.H{
 					"message": "Unauthorized",
 				})
 				c.Abort()
+				return
 			}
 		}
 	}
 }
 
+func parseToken(tokenString string) (jwt.MapClaims, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if method, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("Signing method invalid")
+		} else if method != JwtSigningMethod {
+			return nil, fmt.Errorf("Signing method invalid")
+		}
+
+		return JwtSignatureKey, nil
+	})
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok || !token.Valid {
+		return nil, err
+	}
+	return claims, nil
+}
+
 func GenerateToken(userName, email string) (string, error) {
 	claims := MyClaims{
 		StandardClaims: jwt.StandardClaims{
-			Issuer:   ApplicationName,
-			IssuedAt: time.Now().Unix(),
+			Issuer: ApplicationName,
 		},
 		Username: userName,
 		Email:    email,
 	}
-	token := jwt.NewWithClaims(JwtSigningMethod, claims)
 
+	token := jwt.NewWithClaims(JwtSigningMethod, claims)
+	fmt.Println("token", token)
 	return token.SignedString(JwtSignatureKey)
 }
