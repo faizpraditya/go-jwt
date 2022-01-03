@@ -1,8 +1,21 @@
 package main
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt"
 )
+
+var ApplicationName = "ENIGMA"
+var JwtSigningMethod = jwt.SigningMethodHS256
+var JwtSignatureKey = []byte("P@assword")
+
+type MyClaims struct {
+	jwt.StandardClaims
+	Username string `json:"Username"`
+	Email    string `json:"Email"`
+}
 
 type authheader struct {
 	AuthorizationHeader string `header:"Authorization"`
@@ -27,8 +40,12 @@ func main() {
 		}
 
 		if user.Username == "enigma" && user.Password == "123" {
+			token, err := GenerateToken(user.Username, "user@corp.com")
+			if err != nil {
+				c.AbortWithStatus(401)
+			}
 			c.JSON(200, gin.H{
-				"token": "123",
+				"token": token,
 			})
 		} else {
 			c.AbortWithStatus(401)
@@ -107,4 +124,18 @@ func AuthtokenMiddleware() gin.HandlerFunc {
 			}
 		}
 	}
+}
+
+func GenerateToken(userName, email string) (string, error) {
+	claims := MyClaims{
+		StandardClaims: jwt.StandardClaims{
+			Issuer:   ApplicationName,
+			IssuedAt: time.Now().Unix(),
+		},
+		Username: userName,
+		Email:    email,
+	}
+	token := jwt.NewWithClaims(JwtSigningMethod, claims)
+
+	return token.SignedString(JwtSignatureKey)
 }
