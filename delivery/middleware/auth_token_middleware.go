@@ -33,6 +33,7 @@ func (a *AuthTokenMiddleware) RequireToken() gin.HandlerFunc {
 					"message": "Unathorized",
 				})
 				c.Abort()
+				return
 			}
 
 			tokenString := strings.Replace(h.AuthorizationHeader, "Bearer ", "", -1)
@@ -69,6 +70,7 @@ func (a *AuthTokenMiddleware) RequireToken() gin.HandlerFunc {
 				c.AbortWithStatusJSON(401, gin.H{
 					"message": "Unauthorized",
 				})
+				c.Abort()
 				return
 			}
 		}
